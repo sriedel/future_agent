@@ -1,0 +1,11 @@
+require './lib/future_agent/future_agent'
+
+fa = FutureAgent.fork { :foo }
+fa.result
+
+fa = FutureAgent.fork { nil }
+fa.result
+
+
+fa = FutureAgent.fork { raise }
+fa.result
