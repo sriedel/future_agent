@@ -1,0 +1,32 @@
+= FutureAgent
+
+One of the things of Clojure that appeal to me are the agents. Agents in Clojure
+are functions that process their body asynchronously in a separate thread. 
+If you try to read the result of an agent before it completes, it blocks until
+the result is available. Otherwise the parallelism is transparent for the 
+enduser. 
+
+This library tries to emulate that behaviour to a certain degree; since 
+threading isn't what it could be under ruby (GIL, reentrant libraries, ... )
+I decided to work with processes instead of threads for this library.
+Since most modern unices use COW forking, doing multi-processing instead of multi-threading probably isn't as painful performance and memory wise as you might imagine.
+
+Not heavily tested at the moment, any feedback would be welcome.
+
+== Signal Handlers
+FutureAgent installs a SIGCHLD/SIGCLD handler when the class is loaded. It tries to hand off to the previous signal handler installed for the SIGCHLD/SIGCLD signals, if one was installed (caveat: handlers in classes or modules are not yet supported).
+
+This means that if you install your own SIGCLD handler after requiring FutureAgent, you have to take care to hand off any childern notifications of terminated agents to FutureAgent.handle_pid, otherwise you'll risk zombies and memory leaks (because the Zombies will eat your computes brains).
+
+== Usage
+    require 'future_agent/future_agent'
+    
+    agent = FutureAgent.fork { compute_value() }
+    # do other stuff
+    begin
+      agent.result # will block if compute_value is not done yet,
+                   # returns the result of compute_value()
+    rescue FutureAgent::ChildDied
+      # compute_value() raised an exception. deal with it here
+    end
+
