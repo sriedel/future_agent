@@ -7,42 +7,6 @@ class FutureAgent
     @old_handler = Signal.trap( "SIGCLD" ) { |signo| child_handler( signo ) }
   end
 
-  def self.child_handler( signal_number )
-    # since signals can get lost of too many are triggered in too short a time,
-    # we will have to loop over Process.wait until no more children can be
-    # reaped, i.e. Errno::ECHILD is raised
-    loop do
-      begin
-        exited_child_pid = Process.wait
-
-        unless @agents.has_key?( exited_child_pid )
-          call_original_child_handler signal_number
-          return
-        end
-
-        agent = @agents.delete(exited_child_pid)
-
-        if( $?.success? )
-          agent.result
-        end
-      rescue Errno::ECHILD
-        break
-      end
-    end
-  end
-
-  def self.call_original_child_handler( signal_number )
-    return unless @old_handler
-
-    case @old_handler
-      when String, Symbol
-        #TODO: deal with handlers in classes
-        Kernel.send @old_handler, signal_number
-
-      when Proc
-        @old_handler.call( signal_number )
-    end
-  end
   setup_signal_handler
 
 
@@ -62,18 +26,64 @@ class FutureAgent
     return @result if defined?( @result )
 
     begin
-      @result = Marshal.load( @read_pipe.read )
-    rescue ArgumentError
-      # the write pipe closed without writing any data; this means the
-      # other side died somewhere
-      @result = nil
-      raise FutureAgent::ChildDied
+      read_result
     ensure
       @read_pipe.close
     end
   end
 
   protected
+  def self.child_handler( signal_number )
+    # since signals can get lost of too many are triggered in too short a time,
+    # we will have to loop over Process.wait until no more children can be
+    # reaped, i.e. Errno::ECHILD is raised
+    loop do
+
+      begin
+        exited_child_pid = Process.wait
+        handle_pid( signal_number, exited_child_pid )
+
+      rescue Errno::ECHILD
+        break
+      end
+
+    end
+  end
+
+  def self.handle_pid( signal_number, pid )
+    unless @agents.has_key?( pid )
+      call_original_child_handler signal_number
+      return
+    end
+
+    agent = @agents.delete(pid)
+    agent.result if( $?.success? )
+  end
+
+  def self.call_original_child_handler( signal_number )
+    return unless @old_handler
+
+    case @old_handler
+      when String, Symbol
+        #TODO: deal with handlers in classes
+        Kernel.send @old_handler, signal_number
+
+      when Proc
+        @old_handler.call( signal_number )
+    end
+  end
+
+  def read_result
+    begin
+      @result = Marshal.load( @read_pipe.read )
+    rescue ArgumentError
+      # the write pipe closed without writing any data; this means the
+      # other side died somewhere
+      @result = nil
+      raise FutureAgent::ChildDied
+    end
+  end
+
   def fork!
     @read_pipe, @write_pipe = IO.pipe
     retval = fork
@@ -93,7 +103,9 @@ class FutureAgent
     begin
       result = @async_block.call
     rescue Exception
-      STDERR.puts "Exception caught; exiting with -1"
+      #TODO: How do we handle fatal errors/exceptions for the child?
+      #      Some debug logging would be nice... Push this task to the
+      #      user of this class for now
       exit( -1 )
     else
       Marshal.dump( result, @write_pipe )
