@@ -16,6 +16,7 @@ Gem::Specification.new do |s|
 
   s.extra_rdoc_files = %W{ README.rdoc }
   s.files = %W{ README.rdoc
+                VERSION
                 lib/future_agent/future_agent.rb
                 spec/spec_helper.rb
                 spec/future_agent/future_agent_spec.rb
