@@ -1,11 +1,22 @@
 class FutureAgent
-  class ChildDied < Exception; end
+  class ChildDied < StandardError; end
 
   @agents = {}
 
   def self.setup_signal_handler
     @old_handler = Signal.trap( "SIGCLD" ) { |signo| child_handler( signo ) }
   end
+
+  def self.handle_pid( signal_number, pid )
+    unless @agents.has_key?( pid )
+      call_original_child_handler signal_number
+      return
+    end
+
+    agent = @agents.delete(pid)
+    agent.result if( $?.success? )
+  end
+
 
   setup_signal_handler
 
@@ -48,16 +59,6 @@ class FutureAgent
       end
 
     end
-  end
-
-  def self.handle_pid( signal_number, pid )
-    unless @agents.has_key?( pid )
-      call_original_child_handler signal_number
-      return
-    end
-
-    agent = @agents.delete(pid)
-    agent.result if( $?.success? )
   end
 
   def self.call_original_child_handler( signal_number )
